@@ -26,6 +26,7 @@ interface ReturTabProps {
     type: 'danger' | 'warning' | 'info',
     onConfirm: () => void
   ) => void;
+  onOpenMasterMotoris?: () => void;
 }
 
 export const ReturTab: React.FC<ReturTabProps> = ({
@@ -38,11 +39,18 @@ export const ReturTab: React.FC<ReturTabProps> = ({
   onDeleteRecord,
   onPrintSlip,
   onRequestConfirm,
+  onOpenMasterMotoris,
 }) => {
   const [tanggal, setTanggal] = useState(activeDate);
   const [selectedMotoris, setSelectedMotoris] = useState(motoris[0]?.id || '');
   const [keterangan, setKeterangan] = useState('');
   const [selectedSku, setSelectedSku] = useState(products[0]?.sku || '');
+
+  // Derived valid motoris without synchronous useEffect setState
+  const activeMotoris = motoris.some((m) => m.id === selectedMotoris)
+    ? selectedMotoris
+    : (motoris[0]?.id || '');
+
   const [qtyInput, setQtyInput] = useState<string>('');
   const [kondisi, setKondisi] = useState<'Barang Bagus' | 'Barang Rusak'>('Barang Bagus');
   const [cart, setCart] = useState<ReturCartItem[]>([]);
@@ -51,17 +59,17 @@ export const ReturTab: React.FC<ReturTabProps> = ({
 
   // Motoris Load Hint: calculate total outbound and total returned by this motoris for this SKU
   const motorisHint = useMemo(() => {
-    if (!selectedMotoris || !selectedSku) return null;
+    if (!activeMotoris || !selectedSku) return null;
     const totalOut = outboundRecords
-      .filter((o) => o.idMotoris === selectedMotoris && o.sku === selectedSku)
+      .filter((o) => o.idMotoris === activeMotoris && o.sku === selectedSku)
       .reduce((sum, o) => sum + Number(o.qty || 0), 0);
     const totalRet = returRecords
-      .filter((r) => r.idMotoris === selectedMotoris && r.sku === selectedSku)
+      .filter((r) => r.idMotoris === activeMotoris && r.sku === selectedSku)
       .reduce((sum, r) => sum + Number(r.qty || 0), 0);
     const sisaDiMotoris = Math.max(0, totalOut - totalRet);
 
     return { totalOut, totalRet, sisaDiMotoris };
-  }, [selectedMotoris, selectedSku, outboundRecords, returRecords]);
+  }, [activeMotoris, selectedSku, outboundRecords, returRecords]);
 
   const handleAddItem = () => {
     const qty = Number(qtyInput);
@@ -98,7 +106,7 @@ export const ReturTab: React.FC<ReturTabProps> = ({
     const newRecords: ReturRecord[] = cart.map((item) => ({
       tanggal: tanggal || activeDate,
       noRetur,
-      idMotoris: selectedMotoris,
+      idMotoris: activeMotoris,
       sku: item.sku,
       qty: item.qty,
       kondisi: item.kondisi,
@@ -151,19 +159,46 @@ export const ReturTab: React.FC<ReturTabProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Sales Motoris</label>
-                  <select
-                    required
-                    value={selectedMotoris}
-                    onChange={(e) => setSelectedMotoris(e.target.value)}
-                    className="w-full text-xs sm:text-sm border border-slate-300 rounded-md px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 outline-none bg-white"
-                  >
-                    {motoris.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.id} - {m.nama}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700">Sales Motoris</label>
+                    {onOpenMasterMotoris && (
+                      <button
+                        type="button"
+                        onClick={onOpenMasterMotoris}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
+                        title="Buka kelola Master Data Sales Motoris"
+                      >
+                        + Kelola ({motoris.length})
+                      </button>
+                    )}
+                  </div>
+                  {motoris.length === 0 ? (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[10px] space-y-1">
+                      <p className="font-semibold">Data motoris kosong!</p>
+                      {onOpenMasterMotoris && (
+                        <button
+                          type="button"
+                          onClick={onOpenMasterMotoris}
+                          className="font-bold text-indigo-700 underline text-xs block cursor-pointer"
+                        >
+                          + Tambah / Pulihkan Motoris
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      required
+                      value={activeMotoris}
+                      onChange={(e) => setSelectedMotoris(e.target.value)}
+                      className="w-full text-xs sm:text-sm border border-slate-300 rounded-md px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 outline-none bg-white"
+                    >
+                      {motoris.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.id} - {m.nama} ({m.area})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 

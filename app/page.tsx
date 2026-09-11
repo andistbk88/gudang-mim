@@ -19,6 +19,8 @@ import {
   calculateDailySummary,
   getKartuStok,
   exportBackupJSON,
+  normalizeMotorisList,
+  normalizeProductList,
 } from '@/lib/storage';
 import { Navbar } from '@/components/Navbar';
 import { DashboardTab } from '@/components/DashboardTab';
@@ -57,14 +59,20 @@ export default function HomePage() {
 
   // Modals state
   const [masterDataOpen, setMasterDataOpen] = useState(false);
+  const [masterDataSubtab, setMasterDataSubtab] = useState<'prod' | 'motoris'>('prod');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autoPOOpen, setAutoPOOpen] = useState(false);
   const [printSlip, setPrintSlip] = useState<{
     open: boolean;
-    type: 'outbound' | 'retur';
+    type: 'outbound' | 'retur' | 'inbound';
     docId: string;
   }>({ open: false, type: 'outbound', docId: '' });
   const [selectedKartuSku, setSelectedKartuSku] = useState<string | null>(null);
+
+  const handleOpenMaster = useCallback((subtab: 'prod' | 'motoris' = 'prod') => {
+    setMasterDataSubtab(subtab);
+    setMasterDataOpen(true);
+  }, []);
 
   // Confirmation modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -129,11 +137,15 @@ export default function HomePage() {
 
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed.products && Array.isArray(parsed.products) && parsed.products.length > 0) {
-            setProducts(parsed.products);
+          if (parsed.products && Array.isArray(parsed.products)) {
+            const cleanProds = normalizeProductList(parsed.products);
+            if (cleanProds.length > 0) setProducts(cleanProds);
           }
-          if (parsed.motoris && Array.isArray(parsed.motoris) && parsed.motoris.length > 0) {
-            setMotoris(parsed.motoris);
+          if (parsed.motoris && Array.isArray(parsed.motoris)) {
+            const cleanMots = normalizeMotorisList(parsed.motoris);
+            setMotoris(cleanMots.length > 0 ? cleanMots : DEFAULT_MOTORIS);
+          } else {
+            setMotoris(DEFAULT_MOTORIS);
           }
           if (parsed.outbound && Array.isArray(parsed.outbound)) {
             setOutbound(parsed.outbound);
@@ -180,6 +192,98 @@ export default function HomePage() {
     }
   }, [products, motoris, outbound, retur, inbound, opname, isHydrated]);
 
+  // Unified helper for communicating with Google Apps Script
+  // Supports Node.js API route (/api/sheets), Shared Hosting PHP proxy (/api.php), and direct browser fetch.
+  const executeSheetsPost = useCallback(
+    async (payload: Record<string, unknown>): Promise<{ success: boolean; data?: any }> => {
+      // 1. Try Next.js server route (/api/sheets)
+      try {
+        const res = await fetch('/api/sheets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success || json.status === 'success') return { success: true, data: json };
+        }
+      } catch {
+        // Not running on Node.js
+      }
+
+      // 2. Try PHP proxy (/api.php) for standard Shared Hosting
+      try {
+        const resPhp = await fetch('/api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (resPhp.ok) {
+          const json = await resPhp.json();
+          if (json.success || json.status === 'success') return { success: true, data: json };
+        }
+      } catch {
+        // PHP proxy not available
+      }
+
+      // 3. Fallback to direct client-side fetch (mode: no-cors)
+      const targetScriptUrl = String(payload.scriptUrl || scriptUrl);
+      if (targetScriptUrl && targetScriptUrl.startsWith('https://script.google.com/')) {
+        await fetch(targetScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload),
+        });
+        return { success: true };
+      }
+
+      return { success: false };
+    },
+    [scriptUrl]
+  );
+
+  const executeSheetsGet = useCallback(
+    async (action: string): Promise<any> => {
+      if (!scriptUrl) return null;
+
+      // 1. Try Next.js route
+      try {
+        const res = await fetch(`/api/sheets?action=${action}&scriptUrl=${encodeURIComponent(scriptUrl)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.status === 'success' || json.success) return json;
+        }
+      } catch {
+        // ignore
+      }
+
+      // 2. Try PHP proxy (/api.php)
+      try {
+        const resPhp = await fetch(`/api.php?action=${action}&scriptUrl=${encodeURIComponent(scriptUrl)}`);
+        if (resPhp.ok) {
+          const json = await resPhp.json();
+          if (json.status === 'success' || json.success) return json;
+        }
+      } catch {
+        // ignore
+      }
+
+      // 3. Direct browser fetch
+      try {
+        const resDirect = await fetch(`${scriptUrl}?action=${action}`);
+        if (resDirect.ok) {
+          return await resDirect.json();
+        }
+      } catch {
+        // ignore
+      }
+
+      return null;
+    },
+    [scriptUrl]
+  );
+
   // Sync background helpers
   const silentSyncPush = useCallback(
     async (
@@ -210,44 +314,17 @@ export default function HomePage() {
       }
 
       try {
-        // Try server-side proxy route first (bypasses CORS/redirect drops)
-        const res = await fetch('/api/sheets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadObj),
-        });
-
-        if (res.ok) {
-          const result = await res.json();
-          if (result.success || result.status === 'success') {
-            setSyncStatus('synced');
-            return;
-          }
-        }
-
-        // Direct client-side fetch fallback
-        await fetch(scriptUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(payloadObj),
-        });
-        setSyncStatus('synced');
-      } catch {
-        try {
-          await fetch(scriptUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payloadObj),
-          });
+        const res = await executeSheetsPost(payloadObj);
+        if (res.success) {
           setSyncStatus('synced');
-        } catch {
+        } else {
           setSyncStatus('error');
         }
+      } catch {
+        setSyncStatus('error');
       }
     },
-    [scriptUrl]
+    [scriptUrl, executeSheetsPost]
   );
 
   const refreshFromSheet = useCallback(
@@ -262,33 +339,21 @@ export default function HomePage() {
       if (forceToast) setLoadingText('Mengunduh Database Cloud...');
 
       try {
-        let data: any = null;
-
-        // Try proxy route first to ensure reliable redirect handling
-        try {
-          const proxyRes = await fetch(
-            `/api/sheets?action=getAll&scriptUrl=${encodeURIComponent(scriptUrl)}`
-          );
-          if (proxyRes.ok) {
-            const json = await proxyRes.json();
-            if (json.status === 'success' || json.success) {
-              data = json;
-            }
-          }
-        } catch {
-          // fallback to direct
-        }
-
-        // Direct fetch fallback
-        if (!data) {
-          const res = await fetch(`${scriptUrl}?action=getAll`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          data = await res.json();
-        }
+        const data = await executeSheetsGet('getAll');
 
         if (data && (data.status === 'success' || data.success)) {
-          if (data.products && Array.isArray(data.products)) setProducts(data.products);
-          if (data.motoris && Array.isArray(data.motoris)) setMotoris(data.motoris);
+          if (data.products && Array.isArray(data.products)) {
+            const cleanProds = normalizeProductList(data.products);
+            if (cleanProds.length > 0) setProducts(cleanProds);
+          }
+          if (data.motoris && Array.isArray(data.motoris)) {
+            const cleanMots = normalizeMotorisList(data.motoris);
+            if (cleanMots.length > 0) {
+              setMotoris(cleanMots);
+            } else {
+              console.warn('Google Sheets returned 0 motoris or unparsed column structure. Preserving existing motoris.');
+            }
+          }
           if (data.outbound && Array.isArray(data.outbound)) setOutbound(data.outbound);
           if (data.retur && Array.isArray(data.retur)) setRetur(data.retur);
           if (data.inbound && Array.isArray(data.inbound)) setInbound(data.inbound);
@@ -297,18 +362,18 @@ export default function HomePage() {
           setSyncStatus('synced');
           if (forceToast) showToast('Sinkronisasi database Google Sheets berhasil!', 'success');
         } else {
-          throw new Error('Format data tidak valid');
+          throw new Error('Gagal mengambil data, pastikan spreadsheet aktif');
         }
       } catch (err: unknown) {
         setSyncStatus('error');
         const msg = err instanceof Error ? err.message : 'Periksa hak akses script.';
-        if (forceToast) showToast(`Gagal mengambil data dari Google Sheets: ${msg}`, 'error');
+        if (forceToast) showToast(`Gagal sinkronisasi: ${msg}`, 'error');
       } finally {
         setIsSyncing(false);
         setLoadingText(null);
       }
     },
-    [scriptUrl, showToast]
+    [scriptUrl, executeSheetsGet, showToast]
   );
 
   const handleTestPing = useCallback(async () => {
@@ -318,31 +383,14 @@ export default function HomePage() {
     }
     setLoadingText('Tes Koneksi ke Google Sheets...');
     try {
-      let data: any = null;
-      try {
-        const proxyRes = await fetch(
-          `/api/sheets?action=ping&scriptUrl=${encodeURIComponent(scriptUrl)}`
-        );
-        if (proxyRes.ok) {
-          data = await proxyRes.json();
-        }
-      } catch {
-        // fallback
-      }
-
-      if (!data) {
-        const res = await fetch(`${scriptUrl}?action=ping`);
-        if (res.ok) {
-          data = await res.json();
-        }
-      }
+      const data = await executeSheetsGet('ping');
 
       if (data && (data.status === 'success' || data.success)) {
         const ssName = data.spreadsheetName ? ` (${data.spreadsheetName})` : '';
         showToast(`Koneksi berhasil! Terhubung ke Google Sheets${ssName}`, 'success');
         setSyncStatus('synced');
       } else {
-        throw new Error(data?.error || 'Koneksi ditolak');
+        throw new Error(data?.error || 'Koneksi ditolak oleh Google Apps Script');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Pastikan opsi "Who has access: Anyone"';
@@ -351,7 +399,7 @@ export default function HomePage() {
     } finally {
       setLoadingText(null);
     }
-  }, [scriptUrl, showToast]);
+  }, [scriptUrl, executeSheetsGet, showToast]);
 
   const handleInitSheets = useCallback(async () => {
     if (!scriptUrl || !scriptUrl.startsWith('https://script.google.com/')) {
@@ -360,20 +408,15 @@ export default function HomePage() {
     }
     setLoadingText('Menyiapkan format tabel di Google Sheets...');
     try {
-      const res = await fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scriptUrl,
-          action: 'initSheets',
-        }),
+      const res = await executeSheetsPost({
+        scriptUrl,
+        action: 'initSheets',
       });
-      const data = await res.json();
-      if (data.success || data.status === 'success') {
+      if (res.success) {
         showToast('Format seluruh 6 sheet berhasil disiapkan di spreadsheet Google Anda!', 'success');
         setSyncStatus('synced');
       } else {
-        throw new Error(data.error || 'Gagal inisialisasi sheet');
+        throw new Error('Gagal inisialisasi sheet');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Periksa hak akses script';
@@ -381,7 +424,7 @@ export default function HomePage() {
     } finally {
       setLoadingText(null);
     }
-  }, [scriptUrl, showToast]);
+  }, [scriptUrl, executeSheetsPost, showToast]);
 
   const handleSyncAllToSheet = useCallback(async () => {
     if (!scriptUrl || !scriptUrl.startsWith('https://script.google.com/')) {
@@ -390,26 +433,21 @@ export default function HomePage() {
     }
     setLoadingText('Mengunggah seluruh database lokal ke Google Sheets...');
     try {
-      const res = await fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scriptUrl,
-          action: 'syncAll',
-          products,
-          motoris,
-          outbound,
-          retur,
-          inbound,
-          opname,
-        }),
+      const res = await executeSheetsPost({
+        scriptUrl,
+        action: 'syncAll',
+        products,
+        motoris,
+        outbound,
+        retur,
+        inbound,
+        opname,
       });
-      const data = await res.json();
-      if (data.success || data.status === 'success') {
+      if (res.success) {
         showToast('Seluruh data master & transaksi berhasil disinkronkan ke Google Sheets!', 'success');
         setSyncStatus('synced');
       } else {
-        throw new Error(data.error || 'Gagal sinkronisasi data');
+        throw new Error('Gagal sinkronisasi data');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Koneksi terputus';
@@ -417,7 +455,7 @@ export default function HomePage() {
     } finally {
       setLoadingText(null);
     }
-  }, [scriptUrl, products, motoris, outbound, retur, inbound, opname, showToast]);
+  }, [scriptUrl, products, motoris, outbound, retur, inbound, opname, executeSheetsPost, showToast]);
 
   const handleSaveScriptUrl = useCallback(
     (newUrl: string) => {
@@ -597,7 +635,7 @@ export default function HomePage() {
   };
 
   // Slip Printing
-  const handleOpenPrintSlip = (type: 'outbound' | 'retur', docId: string) => {
+  const handleOpenPrintSlip = (type: 'outbound' | 'retur' | 'inbound', docId: string) => {
     setPrintSlip({ open: true, type, docId });
   };
 
@@ -692,12 +730,12 @@ export default function HomePage() {
         orderBadgeCount={orderBadgeCount}
         onRefresh={() => refreshFromSheet(true)}
         onOpenAutoPO={() => setAutoPOOpen(true)}
-        onOpenMaster={() => setMasterDataOpen(true)}
+        onOpenMaster={() => handleOpenMaster('prod')}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {/* Main Content Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className={`flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 ${printSlip.open || selectedKartuSku ? 'print:hidden' : ''}`}>
         {activeTab === 'tabDashboard' && (
           <DashboardTab
             activeDate={activeDate}
@@ -722,6 +760,7 @@ export default function HomePage() {
             onDeleteRecord={handleDeleteOutbound}
             onPrintSlip={(noJalan) => handleOpenPrintSlip('outbound', noJalan)}
             onRequestConfirm={requestConfirm}
+            onOpenMasterMotoris={() => handleOpenMaster('motoris')}
           />
         )}
 
@@ -736,6 +775,7 @@ export default function HomePage() {
             onDeleteRecord={handleDeleteRetur}
             onPrintSlip={(noRetur) => handleOpenPrintSlip('retur', noRetur)}
             onRequestConfirm={requestConfirm}
+            onOpenMasterMotoris={() => handleOpenMaster('motoris')}
           />
         )}
 
@@ -746,6 +786,7 @@ export default function HomePage() {
             activeDate={activeDate}
             onSaveInbound={handleSaveInbound}
             onDeleteRecord={handleDeleteInbound}
+            onPrintSlip={(noBukti) => handleOpenPrintSlip('inbound', noBukti)}
             onRequestConfirm={requestConfirm}
           />
         )}
@@ -771,6 +812,7 @@ export default function HomePage() {
             inboundRecords={inbound}
             opnameRecords={opname}
             onOpenKartuStok={(sku) => setSelectedKartuSku(sku)}
+            onPrintSlip={handleOpenPrintSlip}
             onShowToast={showToast}
           />
         )}
@@ -780,6 +822,7 @@ export default function HomePage() {
       <MasterDataModal
         isOpen={masterDataOpen}
         onClose={() => setMasterDataOpen(false)}
+        initialSubtab={masterDataSubtab}
         products={products}
         motoris={motoris}
         onAddProduct={handleAddProduct}
@@ -788,6 +831,10 @@ export default function HomePage() {
         onAddMotoris={handleAddMotoris}
         onUpdateMotoris={handleUpdateMotoris}
         onDeleteMotoris={handleDeleteMotoris}
+        onResetDefaultMotoris={() => {
+          setMotoris(DEFAULT_MOTORIS);
+          showToast('Data motoris berhasil dipulihkan ke 3 sales bawaan.', 'success');
+        }}
         onRequestConfirm={requestConfirm}
       />
 
@@ -825,6 +872,7 @@ export default function HomePage() {
         docId={printSlip.docId}
         outbounds={outbound}
         returs={retur}
+        inbounds={inbound}
         products={products}
         motoris={motoris}
       />

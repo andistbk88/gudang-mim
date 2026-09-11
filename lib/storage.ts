@@ -23,6 +23,119 @@ export const DEFAULT_MOTORIS: Motoris[] = [
   { id: 'SK-01', nama: 'Rudi Hartono', area: 'Sukabumi Timur' }
 ];
 
+export function normalizeMotorisList(rawList: unknown): Motoris[] {
+  if (!Array.isArray(rawList)) return [];
+  const result: Motoris[] = [];
+  const seenIds = new Set<string>();
+
+  rawList.forEach((raw, idx) => {
+    if (!raw || typeof raw !== 'object') return;
+    const item = raw as Record<string, unknown>;
+
+    // Support multiple field aliases
+    const id = String(
+      item.id ||
+      item.idMotoris ||
+      item.id_motoris ||
+      item.kode ||
+      item.kodeMotoris ||
+      item.kode_motoris ||
+      item.noId ||
+      item.nip ||
+      item.nik ||
+      ''
+    ).trim();
+
+    const nama = String(
+      item.nama ||
+      item.namaSales ||
+      item.nama_sales ||
+      item.namaMotoris ||
+      item.nama_motoris ||
+      item.sales ||
+      item.salesman ||
+      item.namaLengkap ||
+      ''
+    ).trim();
+
+    const area = String(
+      item.area ||
+      item.wilayah ||
+      item.rayon ||
+      item.rute ||
+      item.areaKerja ||
+      item.lokasi ||
+      'General'
+    ).trim();
+
+    if (id || nama) {
+      const finalId = id || `CJ-${String(idx + 1).padStart(2, '0')}`;
+      const finalNama = nama || finalId;
+      const finalArea = area || 'General';
+
+      if (!seenIds.has(finalId)) {
+        seenIds.add(finalId);
+        result.push({ id: finalId, nama: finalNama, area: finalArea });
+      }
+    }
+  });
+
+  return result;
+}
+
+export function normalizeProductList(rawList: unknown): Product[] {
+  if (!Array.isArray(rawList)) return [];
+  const result: Product[] = [];
+  const seenSkus = new Set<string>();
+
+  rawList.forEach((raw, idx) => {
+    if (!raw || typeof raw !== 'object') return;
+    const item = raw as Record<string, unknown>;
+
+    const sku = String(
+      item.sku ||
+      item.skuId ||
+      item.kodeProduk ||
+      item.kodeBarang ||
+      item.kodeItem ||
+      item.kode ||
+      ''
+    ).trim().toUpperCase();
+
+    const nama = String(
+      item.nama ||
+      item.namaProduk ||
+      item.namaBarang ||
+      item.namaItem ||
+      ''
+    ).trim();
+
+    const kategori = String(item.kategori || item.category || item.jenis || 'Umum').trim();
+    const satuan = String(item.satuan || item.unit || item.kemasan || 'Pcs').trim();
+    const stokAwal = Number(item.stokAwal !== undefined ? item.stokAwal : item.awal) || 0;
+    const batasMin = Number(item.batasMin !== undefined ? item.batasMin : (item.min !== undefined ? item.min : 50)) || 0;
+
+    if (sku || nama) {
+      const finalSku = sku || `SKU-${String(idx + 1).padStart(3, '0')}`;
+      const finalNama = nama || finalSku;
+
+      if (!seenSkus.has(finalSku)) {
+        seenSkus.add(finalSku);
+        result.push({
+          sku: finalSku,
+          nama: finalNama,
+          kategori,
+          satuan,
+          stokAwal,
+          batasMin,
+        });
+      }
+    }
+  });
+
+  return result;
+}
+
 export function getTodayDateString(): string {
   const d = new Date();
   const year = d.getFullYear();
@@ -369,17 +482,23 @@ export function exportToCSV(
   const filename = `Laporan_${type.toUpperCase()}_Mahameru_${getTodayDateString()}.csv`;
 
   if (type === 'outbound') {
-    headers = ['Tanggal', 'No Jalan', 'ID Motoris', 'Nama Motoris', 'SKU', 'Nama Produk', 'Qty', 'Keterangan'];
-    rows = dataPayload.outbounds.map((r) => [
-      r.tanggal.split('T')[0],
-      r.noJalan,
-      r.idMotoris,
-      dataPayload.getMotorisName(r.idMotoris),
-      r.sku,
-      dataPayload.getProductName(r.sku),
-      r.qty,
-      r.ket || '-',
-    ]);
+    headers = ['Tanggal', 'No Jalan', 'ID Motoris', 'Nama Motoris', 'Area', 'SKU', 'Nama Produk', 'Qty', 'Satuan', 'Keterangan'];
+    rows = dataPayload.outbounds.map((r) => {
+      const p = dataPayload.products.find((prod) => prod.sku === r.sku);
+      const m = dataPayload.motoris.find((mot) => mot.id === r.idMotoris);
+      return [
+        r.tanggal.split('T')[0],
+        r.noJalan,
+        r.idMotoris,
+        m?.nama || dataPayload.getMotorisName(r.idMotoris),
+        m?.area || '-',
+        r.sku,
+        p?.nama || dataPayload.getProductName(r.sku),
+        r.qty,
+        p?.satuan || 'Pcs',
+        r.ket || '-',
+      ];
+    });
   } else if (type === 'retur') {
     headers = ['Tanggal', 'No Retur', 'ID Motoris', 'Nama Motoris', 'SKU', 'Nama Produk', 'Qty', 'Kondisi', 'Keterangan'];
     rows = dataPayload.returs.map((r) => [
@@ -394,16 +513,21 @@ export function exportToCSV(
       r.ket || '-',
     ]);
   } else if (type === 'inbound') {
-    headers = ['Tanggal', 'No Bukti', 'Batch No', 'Exp Date', 'SKU', 'Nama Produk', 'Qty'];
-    rows = dataPayload.inbounds.map((r) => [
-      r.tanggal.split('T')[0],
-      r.noBukti,
-      r.batchNo || '-',
-      r.expDate || '-',
-      r.sku,
-      dataPayload.getProductName(r.sku),
-      r.qty,
-    ]);
+    headers = ['Tanggal', 'No Bukti DO', 'Batch No', 'Exp Date', 'SKU', 'Nama Produk', 'Kategori', 'Qty', 'Satuan'];
+    rows = dataPayload.inbounds.map((r) => {
+      const p = dataPayload.products.find((prod) => prod.sku === r.sku);
+      return [
+        r.tanggal.split('T')[0],
+        r.noBukti,
+        r.batchNo || '-',
+        r.expDate || '-',
+        r.sku,
+        p?.nama || dataPayload.getProductName(r.sku),
+        p?.kategori || '-',
+        r.qty,
+        p?.satuan || 'Pcs',
+      ];
+    });
   } else if (type === 'opname') {
     headers = ['Tanggal', 'SKU', 'Nama Produk', 'Stok Sistem', 'Stok Fisik', 'Selisih (+/-)', 'Keterangan'];
     rows = (dataPayload.opnames || []).map((o) => [
@@ -546,6 +670,25 @@ var SHEET_CONFIG = {
   }
 };
 
+function findSheetFlexible(ss, targetName, aliases) {
+  var sheet = ss.getSheetByName(targetName);
+  if (sheet) return sheet;
+  for (var i = 0; i < aliases.length; i++) {
+    sheet = ss.getSheetByName(aliases[i]);
+    if (sheet) return sheet;
+  }
+  var allSheets = ss.getSheets();
+  var cleanTarget = targetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  var cleanAliases = aliases.map(function(a) { return a.toLowerCase().replace(/[^a-z0-9]/g, ""); });
+  for (var j = 0; j < allSheets.length; j++) {
+    var sName = allSheets[j].getName().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (sName === cleanTarget || cleanAliases.indexOf(sName) !== -1) {
+      return allSheets[j];
+    }
+  }
+  return null;
+}
+
 function getOrCreateSheet(ss, sheetName) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -591,26 +734,26 @@ function rowObjectToArray(sheetName, obj) {
 
 function normalizeHeaderName(rawHeader) {
   var h = String(rawHeader).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (h === "sku" || h === "skuid") return "sku";
-  if (h === "nama" || h === "namaproduk" || h === "namamotoris") return "nama";
-  if (h === "kategori") return "kategori";
-  if (h === "satuan") return "satuan";
-  if (h === "stokawal" || h === "awal") return "stokAwal";
-  if (h === "batasmin" || h === "min" || h === "batasminimal") return "batasMin";
-  if (h === "id" || h === "idmotoris" || h === "motorisid") return "id";
-  if (h === "area") return "area";
-  if (h === "tanggal" || h === "tgl") return "tanggal";
-  if (h === "nojalan" || h === "nosuratjalan" || h === "suratjalan") return "noJalan";
-  if (h === "noretur") return "noRetur";
-  if (h === "nobukti" || h === "nodo") return "noBukti";
-  if (h === "batchno" || h === "batch" || h === "nobatch") return "batchNo";
-  if (h === "expdate" || h === "expired" || h === "kadaluarsa") return "expDate";
-  if (h === "qty" || h === "jumlah") return "qty";
-  if (h === "kondisi") return "kondisi";
-  if (h === "ket" || h === "keterangan" || h === "catatan") return "ket";
-  if (h === "stoksistem" || h === "sistem") return "stokSistem";
-  if (h === "stokfisik" || h === "fisik") return "stokFisik";
-  if (h === "selisih" || h === "diff") return "selisih";
+  if (h === "sku" || h === "skuid" || h === "kodeproduk" || h === "kodebarang" || h === "kodeitem") return "sku";
+  if (h === "nama" || h === "namaproduk" || h === "namamotoris" || h === "namasales" || h === "sales" || h === "salesman" || h === "namabarang" || h === "namalengkap") return "nama";
+  if (h === "kategori" || h === "category" || h === "jenis") return "kategori";
+  if (h === "satuan" || h === "unit" || h === "kemasan" || h === "uom") return "satuan";
+  if (h === "stokawal" || h === "awal" || h === "saldoawal" || h === "stockawal") return "stokAwal";
+  if (h === "batasmin" || h === "min" || h === "batasminimal" || h === "stokmin" || h === "minstok" || h === "buffer") return "batasMin";
+  if (h === "id" || h === "idmotoris" || h === "motorisid" || h === "kode" || h === "kodemotoris" || h === "kodesales" || h === "idsales" || h === "noid" || h === "nip" || h === "nik") return "id";
+  if (h === "area" || h === "wilayah" || h === "rayon" || h === "rute" || h === "areakerja" || h === "lokasi" || h === "zona") return "area";
+  if (h === "tanggal" || h === "tgl" || h === "date") return "tanggal";
+  if (h === "nojalan" || h === "nosuratjalan" || h === "suratjalan" || h === "noresi") return "noJalan";
+  if (h === "noretur" || h === "nobuktiretur") return "noRetur";
+  if (h === "nobukti" || h === "nodo" || h === "nosuratdo" || h === "noinbound") return "noBukti";
+  if (h === "batchno" || h === "batch" || h === "nobatch" || h === "lot") return "batchNo";
+  if (h === "expdate" || h === "expired" || h === "kadaluarsa" || h === "exp") return "expDate";
+  if (h === "qty" || h === "jumlah" || h === "kuantitas" || h === "total" || h === "volume") return "qty";
+  if (h === "kondisi" || h === "statuskondisi") return "kondisi";
+  if (h === "ket" || h === "keterangan" || h === "catatan" || h === "note" || h === "deskripsi") return "ket";
+  if (h === "stoksistem" || h === "sistem" || h === "stokkomputer") return "stokSistem";
+  if (h === "stokfisik" || h === "fisik" || h === "real") return "stokFisik";
+  if (h === "selisih" || h === "diff" || h === "variance") return "selisih";
   return String(rawHeader).trim();
 }
 
@@ -674,15 +817,21 @@ function doGet(e) {
   }
 
   if (action === "getAll") {
-    initAllSheets(ss);
+    var sheetProd = findSheetFlexible(ss, "Master_Produk", ["Produk", "Master Produk", "Data Produk", "Products", "Barang"]);
+    var sheetMot = findSheetFlexible(ss, "Master_Motoris", ["Motoris", "Master Motoris", "Data Motoris", "Daftar Motoris", "Sales", "Sales Motoris", "Master Sales"]);
+    var sheetOut = findSheetFlexible(ss, "Barang_Keluar", ["Barang Keluar", "Keluar", "Outbound", "Surat Jalan", "Muatan"]);
+    var sheetRet = findSheetFlexible(ss, "Retur", ["Retur Motoris", "Barang Retur", "Retur Barang"]);
+    var sheetIn = findSheetFlexible(ss, "Barang_Masuk", ["Barang Masuk", "Masuk", "Inbound", "Surat DO", "DO"]);
+    var sheetOp = findSheetFlexible(ss, "Cek_Fisik", ["Cek Fisik", "Opname", "Stock Opname", "Audit"]);
+
     var payload = {
       status: "success",
-      products: readSheetData(ss.getSheetByName("Master_Produk"), "Master_Produk"),
-      motoris: readSheetData(ss.getSheetByName("Master_Motoris"), "Master_Motoris"),
-      outbound: readSheetData(ss.getSheetByName("Barang_Keluar"), "Barang_Keluar"),
-      retur: readSheetData(ss.getSheetByName("Retur"), "Retur"),
-      inbound: readSheetData(ss.getSheetByName("Barang_Masuk"), "Barang_Masuk"),
-      opname: readSheetData(ss.getSheetByName("Cek_Fisik"), "Cek_Fisik")
+      products: readSheetData(sheetProd, "Master_Produk"),
+      motoris: readSheetData(sheetMot, "Master_Motoris"),
+      outbound: readSheetData(sheetOut, "Barang_Keluar"),
+      retur: readSheetData(sheetRet, "Retur"),
+      inbound: readSheetData(sheetIn, "Barang_Masuk"),
+      opname: readSheetData(sheetOp, "Cek_Fisik")
     };
     return ContentService.createTextOutput(JSON.stringify(payload))
       .setMimeType(ContentService.MimeType.JSON);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ArrowDownToDot, Plus, Trash2, Save, Search } from 'lucide-react';
+import { ArrowDownToDot, Plus, Trash2, Save, Search, Printer } from 'lucide-react';
 import {
   Product,
   InboundRecord,
@@ -15,6 +15,7 @@ interface InboundTabProps {
   activeDate: string;
   onSaveInbound: (records: InboundRecord[]) => void;
   onDeleteRecord: (index: number, noBukti: string) => void;
+  onPrintSlip?: (noBukti: string) => void;
   onRequestConfirm: (
     title: string,
     message: string,
@@ -29,6 +30,7 @@ export const InboundTab: React.FC<InboundTabProps> = ({
   activeDate,
   onSaveInbound,
   onDeleteRecord,
+  onPrintSlip,
   onRequestConfirm,
 }) => {
   const [tanggal, setTanggal] = useState(activeDate);
@@ -330,21 +332,33 @@ export const InboundTab: React.FC<InboundTabProps> = ({
                           {record.qty}
                         </td>
                         <td className="py-2.5 px-3 text-center no-print">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onRequestConfirm(
-                                'Hapus Penerimaan DO?',
-                                `Hapus transaksi DO ${record.noBukti} (${record.sku})? Data akan dihapus permanen.`,
-                                'danger',
-                                () => onDeleteRecord(originalIndex, record.noBukti)
-                              )
-                            }
-                            title="Hapus"
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer active:scale-95"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            {onPrintSlip && (
+                              <button
+                                type="button"
+                                onClick={() => onPrintSlip(record.noBukti)}
+                                title="Cetak Bukti Penerimaan DO"
+                                className="p-1 bg-slate-100 text-slate-600 hover:text-white hover:bg-[#0b1e36] rounded transition cursor-pointer active:scale-95"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onRequestConfirm(
+                                  'Hapus Penerimaan DO?',
+                                  `Hapus transaksi DO ${record.noBukti} (${record.sku})? Data akan dihapus permanen.`,
+                                  'danger',
+                                  () => onDeleteRecord(originalIndex, record.noBukti)
+                                )
+                              }
+                              title="Hapus"
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer active:scale-95"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

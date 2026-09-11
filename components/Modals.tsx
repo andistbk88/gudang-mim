@@ -29,6 +29,7 @@ import {
   StockCalculation,
   OutboundRecord,
   ReturRecord,
+  InboundRecord,
   KartuStokRow,
 } from '@/types/inventory';
 import { GOOGLE_APPS_SCRIPT_TEMPLATE } from '@/lib/storage';
@@ -39,6 +40,7 @@ import { GOOGLE_APPS_SCRIPT_TEMPLATE } from '@/lib/storage';
 interface MasterDataModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialSubtab?: 'prod' | 'motoris';
   products: Product[];
   motoris: Motoris[];
   onAddProduct: (product: Product) => void;
@@ -47,6 +49,7 @@ interface MasterDataModalProps {
   onAddMotoris: (motoris: Motoris) => void;
   onUpdateMotoris: (motoris: Motoris) => void;
   onDeleteMotoris: (id: string) => void;
+  onResetDefaultMotoris?: () => void;
   onRequestConfirm: (
     title: string,
     message: string,
@@ -58,6 +61,7 @@ interface MasterDataModalProps {
 export const MasterDataModal: React.FC<MasterDataModalProps> = ({
   isOpen,
   onClose,
+  initialSubtab = 'prod',
   products,
   motoris,
   onAddProduct,
@@ -66,9 +70,16 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
   onAddMotoris,
   onUpdateMotoris,
   onDeleteMotoris,
+  onResetDefaultMotoris,
   onRequestConfirm,
 }) => {
-  const [subtab, setSubtab] = useState<'prod' | 'motoris'>('prod');
+  const [subtab, setSubtab] = useState<'prod' | 'motoris'>(initialSubtab);
+  const [prevInitialSubtab, setPrevInitialSubtab] = useState(initialSubtab);
+
+  if (initialSubtab !== prevInitialSubtab) {
+    setPrevInitialSubtab(initialSubtab);
+    setSubtab(initialSubtab);
+  }
 
   // Edit states
   const [editingSku, setEditingSku] = useState<string | null>(null);
@@ -85,7 +96,7 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
   // Motoris form state
   const [motId, setMotId] = useState('');
   const [motNama, setMotNama] = useState('');
-  const [motArea, setMotArea] = useState('General');
+  const [motArea, setMotArea] = useState('Cianjur Kota');
 
   if (!isOpen) return null;
 
@@ -406,8 +417,8 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
                   )}
                 </div>
 
-                <div className="flex flex-wrap sm:flex-nowrap gap-3 items-end">
-                  <div className="w-full sm:w-1/4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                  <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                       ID Motoris
                     </label>
@@ -415,26 +426,38 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
                       type="text"
                       required
                       disabled={!!editingMotId}
-                      placeholder="CJ-0X"
+                      placeholder="CJ-01"
                       value={motId}
                       onChange={(e) => setMotId(e.target.value)}
                       className="w-full border border-slate-300 rounded-md px-2.5 py-1.5 uppercase outline-none focus:ring-1 focus:ring-[#c29b38] bg-white disabled:bg-slate-100 disabled:text-slate-500"
                     />
                   </div>
-                  <div className="w-full sm:w-2/4">
+                  <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      Nama Sales
+                      Nama Sales Motoris
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="Nama sales motoris..."
+                      placeholder="Ilham Ramadhan"
                       value={motNama}
                       onChange={(e) => setMotNama(e.target.value)}
                       className="w-full border border-slate-300 rounded-md px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#c29b38] bg-white"
                     />
                   </div>
-                  <div className="w-full sm:w-1/4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Wilayah / Area
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Cianjur Kota"
+                      value={motArea}
+                      onChange={(e) => setMotArea(e.target.value)}
+                      className="w-full border border-slate-300 rounded-md px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#c29b38] bg-white"
+                    />
+                  </div>
+                  <div>
                     <button
                       type="submit"
                       className="w-full bg-[#0b1e36] hover:bg-[#163155] text-white px-3 py-2 rounded-md font-bold transition flex items-center justify-center gap-1 active:scale-95 shadow-xs cursor-pointer"
@@ -448,6 +471,27 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
 
               {/* Master Motoris Table */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">
+                    Daftar Armada Motoris ({motoris.length})
+                  </span>
+                  {onResetDefaultMotoris && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onRequestConfirm(
+                          'Pulihkan Data Contoh Motoris?',
+                          'Ini akan mengisi data 3 motoris default jika data saat ini kosong atau hilang.',
+                          'info',
+                          onResetDefaultMotoris
+                        )
+                      }
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold hover:underline"
+                    >
+                      Pulihkan Contoh Motoris
+                    </button>
+                  )}
+                </div>
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 border-b border-slate-200">
                     <tr>
@@ -458,38 +502,60 @@ export const MasterDataModal: React.FC<MasterDataModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {motoris.map((m) => (
-                      <tr key={m.id} className="hover:bg-slate-50 transition">
-                        <td className="p-3 font-mono font-bold text-[#0b1e36]">{m.id}</td>
-                        <td className="p-3 font-semibold text-slate-800">{m.nama}</td>
-                        <td className="p-3 text-slate-500">{m.area}</td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleStartEditMotoris(m)}
-                              title="Edit Motoris"
-                              className="p-1 text-slate-400 hover:text-indigo-600 transition"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() =>
-                                onRequestConfirm(
-                                  'Hapus Motoris?',
-                                  `Hapus master motoris ${m.id} (${m.nama})?`,
-                                  'danger',
-                                  () => onDeleteMotoris(m.id)
-                                )
-                              }
-                              title="Hapus Motoris"
-                              className="p-1 text-slate-400 hover:text-rose-600 transition"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                    {motoris.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="text-center py-8 px-4 text-slate-400">
+                          <div className="max-w-xs mx-auto space-y-2">
+                            <p className="font-semibold text-slate-600">Belum ada data sales motoris</p>
+                            <p className="text-[11px] text-slate-400">
+                              Tambahkan data sales di form atas, atau klik &quot;Pulihkan Contoh Motoris&quot; untuk memuat data sampel.
+                            </p>
+                            {onResetDefaultMotoris && (
+                              <button
+                                type="button"
+                                onClick={onResetDefaultMotoris}
+                                className="px-3 py-1.5 bg-[#0b1e36] text-white rounded text-xs font-bold hover:bg-[#163155] transition"
+                              >
+                                Pulihkan 3 Sales Default
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      motoris.map((m) => (
+                        <tr key={m.id} className="hover:bg-slate-50 transition">
+                          <td className="p-3 font-mono font-bold text-[#0b1e36]">{m.id}</td>
+                          <td className="p-3 font-semibold text-slate-800">{m.nama}</td>
+                          <td className="p-3 text-slate-500">{m.area}</td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleStartEditMotoris(m)}
+                                title="Edit Motoris"
+                                className="p-1 text-slate-400 hover:text-indigo-600 transition"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  onRequestConfirm(
+                                    'Hapus Motoris?',
+                                    `Hapus master motoris ${m.id} (${m.nama})?`,
+                                    'danger',
+                                    () => onDeleteMotoris(m.id)
+                                  )
+                                }
+                                title="Hapus Motoris"
+                                className="p-1 text-slate-400 hover:text-rose-600 transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -851,19 +917,28 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 printable-modal-overlay">
       <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 printable-modal-card">
-        {/* Printable Header for Print Output */}
+        {/* Printable Header for Print Output (KOP SURAT) */}
         <div className="print-only mb-4 pb-3 border-b-2 border-[#0b1e36]">
           <div className="flex justify-between items-start">
-            <div>
-              <h2 className="font-black text-lg uppercase text-[#0b1e36]">
-                PT. Mahameru Insan Mandiri - Kartu Stok
-              </h2>
-              <p className="text-xs text-slate-600 font-semibold">
-                {data.product.nama} ({data.product.sku}) - Kategori: {data.product.kategori}
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 border-2 border-[#0b1e36] rounded flex items-center justify-center font-black text-sm text-[#0b1e36]">
+                MIM
+              </div>
+              <div>
+                <h2 className="font-black text-base uppercase text-[#0b1e36] leading-tight">
+                  PT. Mahameru Insan Mandiri
+                </h2>
+                <p className="text-[11px] text-slate-600 font-semibold">
+                  Logistik & Pergudangan - KARTU KENDALI STOK BARANG
+                </p>
+                <p className="text-xs font-bold text-slate-800 mt-0.5">
+                  {data.product.nama} ({data.product.sku}) | Kategori: {data.product.kategori} | Satuan: {data.product.satuan}
+                </p>
+              </div>
             </div>
-            <div className="text-right text-xs text-slate-500">
-              Dicetak: {new Date().toLocaleDateString('id-ID')}
+            <div className="text-right text-[11px] text-slate-500">
+              <p>Dicetak: {new Date().toLocaleString('id-ID')}</p>
+              <p className="font-bold text-[#0b1e36]">Sisa Stok: {data.saldoAkhir} {data.product.satuan}</p>
             </div>
           </div>
         </div>
@@ -895,8 +970,8 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
         </div>
 
         {/* Top 3 Metric Cards */}
-        <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-3 gap-4 text-center shrink-0">
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
+        <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-3 gap-4 text-center shrink-0 print:bg-white print:p-2">
+          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-xs print:p-2">
             <span className="block text-[10px] text-slate-400 uppercase font-bold">
               Saldo Awal Master
             </span>
@@ -905,7 +980,7 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
             </span>
           </div>
 
-          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
+          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-xs print:p-2">
             <span className="block text-[10px] text-slate-400 uppercase font-bold">
               Total Terjual (Net)
             </span>
@@ -914,7 +989,7 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
             </span>
           </div>
 
-          <div className="bg-white p-3 rounded-lg border border-[#c29b38] shadow-xs">
+          <div className="bg-white p-3 rounded-lg border border-[#c29b38] shadow-xs print:p-2">
             <span className="block text-[10px] text-[#0b1e36] uppercase font-bold">
               Sisa Stok Akhir
             </span>
@@ -927,7 +1002,7 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
         {/* Ledger Table */}
         <div className="p-0 overflow-y-auto flex-1 bg-white">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10">
+            <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10 print:bg-slate-200">
               <tr>
                 <th className="p-3">Tanggal</th>
                 <th className="p-3">Jenis Mutasi</th>
@@ -946,7 +1021,7 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
                 </tr>
               ) : (
                 data.rows.map((r, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition">
+                  <tr key={idx} className="hover:bg-slate-50 transition border-b border-slate-100">
                     <td className="p-3 font-mono text-slate-500">{r.tanggal}</td>
                     <td className={`p-3 font-bold ${r.colorClass}`}>{r.jenis}</td>
                     <td className="p-3 text-slate-600 truncate max-w-[200px]">{r.keterangan}</td>
@@ -958,6 +1033,24 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
               )}
             </tbody>
           </table>
+
+          {/* Printable Signature for Kartu Stok */}
+          <div className="print-only p-4 pt-8 border-t border-slate-300 page-break-inside-avoid">
+            <div className="grid grid-cols-2 text-center text-xs">
+              <div>
+                <p className="font-semibold text-slate-500 mb-14">Petugas Gudang / Administrasi</p>
+                <p className="font-bold text-slate-800 border-t border-slate-400 mx-10 pt-1">
+                  ( ..................................... )
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-500 mb-14">Supervisor Logistik</p>
+                <p className="font-bold text-slate-800 border-t border-slate-400 mx-10 pt-1">
+                  ( ..................................... )
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -970,10 +1063,11 @@ export const KartuStokModal: React.FC<KartuStokModalProps> = ({ isOpen, onClose,
 interface PrintSlipModalProps {
   isOpen: boolean;
   onClose: () => void;
-  type: 'outbound' | 'retur';
+  type: 'outbound' | 'retur' | 'inbound';
   docId: string;
   outbounds: OutboundRecord[];
   returs: ReturRecord[];
+  inbounds?: InboundRecord[];
   products: Product[];
   motoris: Motoris[];
 }
@@ -985,6 +1079,7 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({
   docId,
   outbounds,
   returs,
+  inbounds = [],
   products,
   motoris,
 }) => {
@@ -993,141 +1088,221 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({
   const records =
     type === 'outbound'
       ? outbounds.filter((o) => o.noJalan === docId)
-      : returs.filter((r) => r.noRetur === docId);
+      : type === 'retur'
+      ? returs.filter((r) => r.noRetur === docId)
+      : inbounds.filter((i) => i.noBukti === docId);
 
   if (records.length === 0) return null;
 
   const first = records[0];
-  const motId = first.idMotoris;
+  const isOut = type === 'outbound';
+  const isRet = type === 'retur';
+  const isIn = type === 'inbound';
+
+  const motId = (first as OutboundRecord).idMotoris || '';
   const motObj = motoris.find((m) => m.id === motId);
   const motName = motObj ? `${motObj.nama} (${motObj.area})` : motId;
-  const title = type === 'outbound' ? 'SURAT JALAN LOADING PAGI' : 'BUKTI PENERIMAAN RETUR';
-  const headLabel = 'Motoris';
+
+  const title = isOut
+    ? 'SURAT JALAN LOADING PAGI'
+    : isRet
+    ? 'BUKTI PENERIMAAN RETUR'
+    : 'BUKTI PENERIMAAN BARANG (DO PABRIK)';
+
+  const totalQty = records.reduce((sum, r) => sum + Number(r.qty || 0), 0);
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 printable-modal-overlay">
-      <div className="bg-white rounded-xl max-w-3xl w-full shadow-2xl flex flex-col max-h-[90vh] border border-slate-200 overflow-hidden printable-modal-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 printable-modal-overlay">
+      <div className="bg-white rounded-xl max-w-3xl w-full shadow-2xl flex flex-col max-h-[95vh] border border-slate-200 overflow-hidden printable-modal-card">
         <div className="px-5 py-3 bg-[#0b1e36] text-white flex justify-between items-center shrink-0 no-print">
-          <h3 className="font-bold text-sm flex items-center gap-2">
-            <Printer className="w-4 h-4 text-[#dfb753]" /> Preview Dokumen Transaksi
-          </h3>
+          <div className="flex items-center gap-2">
+            <Printer className="w-4 h-4 text-[#dfb753]" />
+            <span className="font-bold text-sm">Preview Dokumen: {docId}</span>
+            <span className="text-[10px] bg-[#c29b38]/30 text-[#dfb753] font-mono px-2 py-0.5 rounded uppercase">
+              {type}
+            </span>
+          </div>
           <button onClick={onClose} className="text-slate-300 hover:text-white transition p-1 cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Printable Area Wrapper */}
-        <div className="p-6 overflow-y-auto flex-1 bg-slate-200 flex justify-center printable-sheet">
-          <div className="bg-white w-[210mm] min-h-[148mm] shadow-md p-8 text-slate-800 text-sm printable-paper">
-            {/* Header */}
-            <div className="flex justify-between items-start border-b-2 border-[#0b1e36] pb-6 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 border-2 border-[#c29b38] rounded-lg flex items-center justify-center bg-[#0b1e36] text-[#c29b38] font-black text-xl">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-200 flex justify-center printable-sheet">
+          <div className="bg-white w-full max-w-[210mm] min-h-[148mm] shadow-md p-6 sm:p-8 text-slate-800 text-sm printable-paper border border-slate-300 print:border-none print:shadow-none print:p-0">
+            {/* Kop Surat Header */}
+            <div className="flex justify-between items-start border-b-2 border-[#0b1e36] pb-4 mb-5">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-14 h-14 border-2 border-[#c29b38] rounded-lg flex items-center justify-center bg-[#0b1e36] text-[#c29b38] font-black text-xl shrink-0 print:border-[#0b1e36]">
                   MIM
                 </div>
                 <div>
-                  <h1 className="font-black text-2xl tracking-tight text-[#0b1e36] uppercase">
+                  <h1 className="font-black text-xl sm:text-2xl tracking-tight text-[#0b1e36] uppercase leading-tight">
                     PT. Mahameru Insan Mandiri
                   </h1>
-                  <p className="text-sm text-slate-500 font-medium">
-                    Distribution Hub & Logistik Area
+                  <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                    Distribution Hub & Logistik Pergudangan
+                  </p>
+                  <p className="text-[10px] text-slate-400">
+                    Sistem Manajemen Inventori & Distribusi Barang
                   </p>
                 </div>
               </div>
-              <div className="text-right">
-                <h2 className="font-black text-xl text-[#c29b38] tracking-widest uppercase">
+              <div className="text-right shrink-0">
+                <h2 className="font-black text-base sm:text-lg text-[#c29b38] tracking-wider uppercase print:text-[#0b1e36]">
                   {title}
                 </h2>
-                <p className="font-mono text-slate-600 font-semibold text-lg mt-1">{docId}</p>
+                <p className="font-mono text-slate-700 font-bold text-sm sm:text-base mt-0.5">{docId}</p>
+                <p className="text-[10px] text-slate-400">Tgl Cetak: {new Date().toLocaleDateString('id-ID')}</p>
               </div>
             </div>
 
             {/* Document Details Info */}
-            <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6 text-xs sm:text-sm">
+              <div className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200">
                 <div className="mb-2">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
                     Tanggal Transaksi
                   </span>
-                  <span className="font-bold text-slate-800 text-base">{first.tanggal}</span>
+                  <span className="font-bold text-slate-800 text-sm sm:text-base">{first.tanggal}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
                     Keterangan Dokumen
                   </span>
-                  <span className="font-semibold text-slate-700">{first.ket || '-'}</span>
+                  <span className="font-semibold text-slate-700">
+                    {(first as OutboundRecord).ket || (first as ReturRecord).ket || (isIn ? 'Penerimaan Stok Pabrik' : '-')}
+                  </span>
                 </div>
               </div>
 
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="mb-2">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">
-                    {headLabel} ID
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 text-base">{motId}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">
-                    Nama Lengkap & Area
-                  </span>
-                  <span className="font-semibold text-slate-700">{motName}</span>
-                </div>
+              <div className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200">
+                {isIn ? (
+                  <>
+                    <div className="mb-2">
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                        Lokasi Gudang Penerima
+                      </span>
+                      <span className="font-bold text-slate-800 text-sm sm:text-base">
+                        Gudang Utama PT. Mahameru
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                        Total Volume Masuk
+                      </span>
+                      <span className="font-bold text-blue-700">{totalQty} Unit / Pcs ({records.length} Jenis Item)</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-2">
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                        Motoris / Sales Penerima
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 text-sm sm:text-base">
+                        {motId} - {motName}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                        Total Muatan
+                      </span>
+                      <span className="font-bold text-[#0b1e36]">{totalQty} Unit / Pcs ({records.length} Jenis Item)</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
             {/* Item Table */}
-            <table className="w-full text-left text-sm mb-12 border-collapse">
-              <thead className="bg-[#0b1e36] text-white font-bold uppercase text-[11px] tracking-wider">
+            <table className="w-full text-left text-xs mb-8 border-collapse border border-slate-200">
+              <thead className="bg-[#0b1e36] text-white font-bold uppercase text-[10px] tracking-wider print:bg-slate-100 print:text-slate-800 print:border-b-2 print:border-slate-800">
                 <tr>
-                  <th className="py-3 px-2 text-center w-12 rounded-tl-lg">No</th>
-                  <th className="py-3 px-2">Kode SKU</th>
-                  <th className="py-3 px-2">Deskripsi Produk</th>
-                  <th className="py-3 px-2 text-right">Qty</th>
-                  <th className="py-3 px-2 text-center rounded-tr-lg">Satuan</th>
+                  <th className="py-2.5 px-2 text-center w-10">No</th>
+                  <th className="py-2.5 px-3">Kode SKU</th>
+                  <th className="py-2.5 px-3">Deskripsi Produk</th>
+                  {isIn && <th className="py-2.5 px-3">Batch / Exp</th>}
+                  {isRet && <th className="py-2.5 px-3">Kondisi</th>}
+                  <th className="py-2.5 px-3 text-right">Qty</th>
+                  <th className="py-2.5 px-3 text-center w-16">Satuan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {records.map((item, idx) => {
                   const p = products.find((x) => x.sku === item.sku);
                   const retItem = item as ReturRecord;
+                  const inItem = item as InboundRecord;
                   return (
-                    <tr key={idx} className="border-b border-slate-200">
-                      <td className="py-2.5 px-2 text-center text-slate-500">{idx + 1}</td>
-                      <td className="py-2.5 px-2 font-mono font-bold text-slate-800">{item.sku}</td>
-                      <td className="py-2.5 px-2 font-semibold text-slate-800">
+                    <tr key={idx} className="border-b border-slate-200 hover:bg-slate-50">
+                      <td className="py-2 px-2 text-center text-slate-500">{idx + 1}</td>
+                      <td className="py-2 px-3 font-mono font-bold text-slate-800">{item.sku}</td>
+                      <td className="py-2 px-3 font-semibold text-slate-800">
                         {p ? p.nama : item.sku}
-                        {retItem.kondisi && (
-                          <span className="block text-[10px] text-slate-500 mt-0.5">
-                            Kondisi: {retItem.kondisi}
-                          </span>
-                        )}
                       </td>
-                      <td className="py-2.5 px-2 text-right font-black text-sm">{item.qty}</td>
-                      <td className="py-2.5 px-2 text-center text-slate-600">{p ? p.satuan : 'Pcs'}</td>
+                      {isIn && (
+                        <td className="py-2 px-3 text-slate-600 font-mono text-[11px]">
+                          {inItem.batchNo || '-'} {inItem.expDate ? `(Exp: ${inItem.expDate})` : ''}
+                        </td>
+                      )}
+                      {isRet && (
+                        <td className="py-2 px-3">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            retItem.kondisi?.includes('Bagus') ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {retItem.kondisi || 'Bagus'}
+                          </span>
+                        </td>
+                      )}
+                      <td className="py-2 px-3 text-right font-black text-sm text-slate-800">
+                        {item.qty}
+                      </td>
+                      <td className="py-2 px-3 text-center text-slate-600">{p ? p.satuan : 'Pcs'}</td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-300">
+                <tr>
+                  <td colSpan={isIn || isRet ? 3 : 3} className="py-2.5 px-3 text-right font-bold uppercase text-slate-700">
+                    Total Keseluruhan
+                  </td>
+                  {isIn && <td></td>}
+                  {isRet && <td></td>}
+                  <td className="py-2.5 px-3 text-right font-black text-sm text-[#0b1e36]">
+                    {totalQty}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-slate-600 text-xs">Pcs/Unit</td>
+                </tr>
+              </tfoot>
             </table>
 
             {/* Signature Block */}
-            <div className="grid grid-cols-3 text-center pt-8">
+            <div className="grid grid-cols-3 text-center pt-4 page-break-inside-avoid print:pt-6">
               <div>
-                <p className="mb-20 text-sm font-semibold text-slate-500">Admin Gudang</p>
-                <p className="font-bold text-slate-800 border-t border-slate-400 mx-8 pt-2">
-                  ( ........................ )
+                <p className="mb-16 text-xs font-semibold text-slate-500">
+                  {isIn ? 'Pengirim / Supir' : 'Admin Gudang'}
+                </p>
+                <p className="font-bold text-xs text-slate-800 border-t border-slate-400 mx-4 pt-1.5">
+                  ( .............................. )
                 </p>
               </div>
               <div>
-                <p className="mb-20 text-sm font-semibold text-slate-500">{headLabel} Penerima</p>
-                <p className="font-bold text-slate-800 border-t border-slate-400 mx-8 pt-2">
-                  {motObj ? motObj.nama : motId}
+                <p className="mb-16 text-xs font-semibold text-slate-500">
+                  {isIn ? 'Petugas Penerima Gudang' : isOut ? 'Motoris Penerima' : 'Motoris Pengembali'}
+                </p>
+                <p className="font-bold text-xs text-slate-800 border-t border-slate-400 mx-4 pt-1.5">
+                  {isIn ? '( .............................. )' : motObj ? motObj.nama : motId}
                 </p>
               </div>
               <div>
-                <p className="mb-20 text-sm font-semibold text-slate-500">Mengetahui SPV</p>
-                <p className="font-bold text-slate-800 border-t border-slate-400 mx-8 pt-2">
-                  ( ........................ )
+                <p className="mb-16 text-xs font-semibold text-slate-500">Mengetahui SPV Logistik</p>
+                <p className="font-bold text-xs text-slate-800 border-t border-slate-400 mx-4 pt-1.5">
+                  ( .............................. )
                 </p>
               </div>
             </div>
@@ -1135,19 +1310,24 @@ export const PrintSlipModal: React.FC<PrintSlipModalProps> = ({
         </div>
 
         {/* Modal Action Buttons */}
-        <div className="p-4 bg-white border-t border-slate-200 flex justify-end gap-3 shrink-0 no-print">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition hover:bg-slate-200 cursor-pointer active:scale-95"
-          >
-            Tutup
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="bg-[#0b1e36] hover:bg-[#163155] text-white px-6 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" /> Print Dokumen
-          </button>
+        <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0 no-print">
+          <p className="text-xs text-slate-500 hidden sm:block">
+            Tips: Gunakan opsi Print untuk mencetak ke printer fisik atau simpan sebagai PDF A4.
+          </p>
+          <div className="flex gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition hover:bg-slate-200 cursor-pointer active:scale-95"
+            >
+              Tutup
+            </button>
+            <button
+              onClick={handlePrint}
+              className="bg-[#0b1e36] hover:bg-[#163155] text-white px-5 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5 text-[#dfb753]" /> Cetak Dokumen
+            </button>
+          </div>
         </div>
       </div>
     </div>

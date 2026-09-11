@@ -26,6 +26,7 @@ interface OutboundTabProps {
     type: 'danger' | 'warning' | 'info',
     onConfirm: () => void
   ) => void;
+  onOpenMasterMotoris?: () => void;
 }
 
 export const OutboundTab: React.FC<OutboundTabProps> = ({
@@ -38,11 +39,18 @@ export const OutboundTab: React.FC<OutboundTabProps> = ({
   onDeleteRecord,
   onPrintSlip,
   onRequestConfirm,
+  onOpenMasterMotoris,
 }) => {
   const [tanggal, setTanggal] = useState(activeDate);
   const [selectedMotoris, setSelectedMotoris] = useState(motoris[0]?.id || '');
   const [keterangan, setKeterangan] = useState('');
   const [selectedSku, setSelectedSku] = useState(products[0]?.sku || '');
+
+  // Derived valid motoris without synchronous useEffect setState
+  const activeMotoris = motoris.some((m) => m.id === selectedMotoris)
+    ? selectedMotoris
+    : (motoris[0]?.id || '');
+
   const [qtyInput, setQtyInput] = useState<string>('');
   const [cart, setCart] = useState<OutboundCartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -104,7 +112,7 @@ export const OutboundTab: React.FC<OutboundTabProps> = ({
     const newRecords: OutboundRecord[] = cart.map((item) => ({
       tanggal: tanggal || activeDate,
       noJalan,
-      idMotoris: selectedMotoris,
+      idMotoris: activeMotoris,
       sku: item.sku,
       qty: item.qty,
       ket: keterangan || 'Loading Pagi',
@@ -157,19 +165,46 @@ export const OutboundTab: React.FC<OutboundTabProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Sales Motoris</label>
-                  <select
-                    required
-                    value={selectedMotoris}
-                    onChange={(e) => setSelectedMotoris(e.target.value)}
-                    className="w-full text-xs sm:text-sm border border-slate-300 rounded-md px-2.5 py-1.5 focus:ring-1 focus:ring-[#c29b38] outline-none bg-white"
-                  >
-                    {motoris.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.id} - {m.nama}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700">Sales Motoris</label>
+                    {onOpenMasterMotoris && (
+                      <button
+                        type="button"
+                        onClick={onOpenMasterMotoris}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
+                        title="Buka kelola Master Data Sales Motoris"
+                      >
+                        + Kelola ({motoris.length})
+                      </button>
+                    )}
+                  </div>
+                  {motoris.length === 0 ? (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[10px] space-y-1">
+                      <p className="font-semibold">Data motoris kosong!</p>
+                      {onOpenMasterMotoris && (
+                        <button
+                          type="button"
+                          onClick={onOpenMasterMotoris}
+                          className="font-bold text-indigo-700 underline text-xs block cursor-pointer"
+                        >
+                          + Tambah / Pulihkan Motoris
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      required
+                      value={activeMotoris}
+                      onChange={(e) => setSelectedMotoris(e.target.value)}
+                      className="w-full text-xs sm:text-sm border border-slate-300 rounded-md px-2.5 py-1.5 focus:ring-1 focus:ring-[#c29b38] outline-none bg-white"
+                    >
+                      {motoris.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.id} - {m.nama} ({m.area})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
